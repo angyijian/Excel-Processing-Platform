@@ -1,3 +1,5 @@
+import pandas as pd
+import openpyxl
 import os
 import sys
 import threading
