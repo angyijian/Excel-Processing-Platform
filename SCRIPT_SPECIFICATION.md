@@ -24,7 +24,16 @@ A string variable used by the GUI dropdown menu to display a human-readable titl
 SCRIPT_NAME = "01. Merge Monthly Sales Reports"
 ```
 
-### 2.2 Entry Function (`process_data`)
+### 2.2 Required Input Count (`REQUIRED_FILE_COUNT`)
+Optional metadata used by the GUI to render the correct number of file input slots.
+
+```python
+REQUIRED_FILE_COUNT = 2
+```
+
+If this variable is omitted, the GUI defaults to 1 input slot.
+
+### 2.3 Entry Function (`process_data`)
 The main execution entry point called by the GUI thread.
 
 ```python

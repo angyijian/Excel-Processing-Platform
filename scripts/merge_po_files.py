@@ -6,6 +6,7 @@ import openpyxl
 
 # 1. UI Display Name
 SCRIPT_NAME = "Merge PO Excel Reports"
+REQUIRED_FILE_COUNT = 1
 
 # Updated 17 Expected Headers Example List
 RAW_EXAMPLE_HEADERS = [
