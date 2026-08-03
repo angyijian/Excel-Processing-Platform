@@ -1,7 +1,7 @@
 import os
 import pandas as pd
 
-SCRIPT_NAME = "Merge Multiple Excels into One"
+SCRIPT_NAME = "Test01"
 
 def process_data(file_paths: list[str], update_progress_callback=None) -> str:
     total = len(file_paths)
