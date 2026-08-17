@@ -1,4 +1,4 @@
-import os
+﻿import os
 import sys
 import threading
 import importlib.util
@@ -31,6 +31,14 @@ def resolve_required_file_count(module) -> int:
     return max(1, parsed_count)
 
 
+def allows_multiple_file_selection(module) -> bool:
+    """Return True for scripts that can accept more than one file in a single slot."""
+    value = getattr(module, "ALLOW_MULTIPLE_FILES", False)
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "y", "multiple", "many"}
+    return bool(value)
+
+
 # ----------------------------------------------------------------------
 # 2. Universal GUI Application Class
 # ----------------------------------------------------------------------
@@ -47,6 +55,7 @@ class UniversalExcelApp(Tk):
         self.scripts_dict = {}  # Stores loaded modules: {"Script Name": module}
         self.input_paths = []
         self.required_file_count = 1
+        self.allow_multiple_files = False
         self.input_slot_path_vars = []
         self.input_slot_buttons = []
         self.input_slots_frame = None
@@ -173,6 +182,10 @@ class UniversalExcelApp(Tk):
         return f"Input {slot_index + 1}"
 
     def _sync_input_paths_for_count(self):
+        if self.allow_multiple_files:
+            self.input_paths = [path for path in self.input_paths if path]
+            return
+
         if not self.input_paths:
             self.input_paths = [None] * self.required_file_count
         elif len(self.input_paths) < self.required_file_count:
@@ -240,7 +253,11 @@ class UniversalExcelApp(Tk):
         if not hasattr(self, "btn_process"):
             return
 
-        is_ready = len(self.file_paths) == self.required_file_count and self.required_file_count > 0
+        if self.allow_multiple_files:
+            is_ready = len(self.file_paths) >= 1
+        else:
+            is_ready = len(self.file_paths) == self.required_file_count and self.required_file_count > 0
+
         if is_ready:
             self.btn_process.configure(state="normal")
         else:
@@ -248,7 +265,11 @@ class UniversalExcelApp(Tk):
 
     def _update_slot_display(self, slot_index: int):
         if 0 <= slot_index < len(self.input_slot_path_vars):
-            self.input_slot_path_vars[slot_index].set(self.input_paths[slot_index] or "")
+            if self.allow_multiple_files:
+                display_value = "; ".join(self.input_paths) if self.input_paths else ""
+            else:
+                display_value = self.input_paths[slot_index] or ""
+            self.input_slot_path_vars[slot_index].set(display_value)
         self._refresh_selected_files()
 
     def _is_supported_excel_file(self, file_path: str) -> bool:
@@ -257,15 +278,23 @@ class UniversalExcelApp(Tk):
     def _on_script_changed(self, _selected_script_name):
         selected_module = self.scripts_dict.get(_selected_script_name)
         self.required_file_count = resolve_required_file_count(selected_module)
+        self.allow_multiple_files = allows_multiple_file_selection(selected_module)
+        self.input_paths = [] if self.allow_multiple_files else self.input_paths
         self._sync_input_paths_for_count()
         self._refresh_input_slots()
-        self.status_label.configure(text=f"Status: Ready for {self.required_file_count} input file(s).", text_color="gray")
+        if self.allow_multiple_files:
+            self.status_label.configure(text="Status: Ready for one or more input file(s).", text_color="gray")
+        else:
+            self.status_label.configure(text=f"Status: Ready for {self.required_file_count} input file(s).", text_color="gray")
 
     def _on_slot_drop(self, event, slot_index: int):
         files = self.tk.splitlist(event.data)
         valid_files = [f for f in files if self._is_supported_excel_file(f)]
         if valid_files:
-            self._set_input_file(slot_index, valid_files[0])
+            if self.allow_multiple_files:
+                self._set_input_file(slot_index, valid_files)
+            else:
+                self._set_input_file(slot_index, valid_files[0])
 
     def _select_file_for_slot(self, slot_index: int):
         files = ctk.filedialog.askopenfilenames(
@@ -273,9 +302,20 @@ class UniversalExcelApp(Tk):
             filetypes=[("Excel Files", "*.xlsx *.xls *.xlsm *.xlsb")]
         )
         if files:
-            self._set_input_file(slot_index, files[0])
+            if self.allow_multiple_files:
+                self._set_input_file(slot_index, list(files))
+            else:
+                self._set_input_file(slot_index, files[0])
 
-    def _set_input_file(self, slot_index: int, file_path: str):
+    def _set_input_file(self, slot_index: int, file_path):
+        if self.allow_multiple_files:
+            if isinstance(file_path, str):
+                self.input_paths = [file_path]
+            else:
+                self.input_paths = [p for p in file_path if p]
+            self._update_slot_display(slot_index)
+            return
+
         if slot_index >= len(self.input_paths):
             self._sync_input_paths_for_count()
         self.input_paths[slot_index] = file_path
@@ -285,7 +325,10 @@ class UniversalExcelApp(Tk):
     # Event Handlers
     # ----------------------------------------------------------------------
     def _clear_files(self):
-        self.input_paths = [None] * self.required_file_count
+        if self.allow_multiple_files:
+            self.input_paths = []
+        else:
+            self.input_paths = [None] * self.required_file_count
         self._refresh_selected_files()
         self.progress_bar.set(0)
         self.status_label.configure(text="Status: Waiting for files...", text_color="gray")
@@ -316,7 +359,14 @@ class UniversalExcelApp(Tk):
             return
 
         self._refresh_selected_files()
-        if len(self.file_paths) != self.required_file_count:
+        if self.allow_multiple_files:
+            if not self.file_paths:
+                self.status_label.configure(
+                    text="Status: Please select at least one Excel file.",
+                    text_color="#EF4444"
+                )
+                return
+        elif len(self.file_paths) != self.required_file_count:
             self.status_label.configure(
                 text=f"Status: This script requires {self.required_file_count} file(s).",
                 text_color="#EF4444"
