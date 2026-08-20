@@ -98,17 +98,19 @@ def validate_input_files(file_paths: list[str]) -> list[str]:
     return valid_paths
 
 
-def find_header_position(sheet) -> tuple[int, list[str]] | tuple[None, None]:
+def find_header_position(sheet) -> tuple[int, int, list[str]] | tuple[None, None, None]:
     """
-    Scans Row 1 to detect starting position of matching PO header structure.
-    Returns (start_column_index, list_of_normalized_headers) or (None, None).
+    Scans Row 1 and Row 2 to detect starting position of matching PO header structure.
+    Returns (header_row, start_column_index, list_of_normalized_headers) or
+    (None, None, None).
     """
     max_col = sheet.max_column
     if max_col < 13:
-        return None, None
+        return None, None, None
 
     for col_idx in range(1, max_col + 1):
         first_cell_val = normalize_header(sheet.cell(row=1, column=col_idx).value)
+        second_cell_val = normalize_header(sheet.cell(row=2, column=col_idx).value)
         # Scan every non-empty cell matching the first expected header
         if first_cell_val == EXPECTED_17_HEADERS[0]:
             # Read next consecutive normalized values up to 17 columns
@@ -118,22 +120,32 @@ def find_header_position(sheet) -> tuple[int, list[str]] | tuple[None, None]:
 
             # Phase 5: Check matching rules (All 17 match OR first 13 match)
             if len(row_headers) >= 17 and row_headers[:17] == EXPECTED_17_HEADERS:
-                return col_idx, row_headers[:17]
+                return 1, col_idx, row_headers[:17]
             elif len(row_headers) >= 13 and row_headers[:13] == EXPECTED_13_HEADERS:
-                return col_idx, row_headers[:13]
+                return 1, col_idx, row_headers[:13]
+        elif second_cell_val == EXPECTED_17_HEADERS[0]:
+            # Read next consecutive normalized values up to 17 columns from Row 2
+            row_headers = []
+            for c in range(col_idx, min(col_idx + 17, max_col + 1)):
+                row_headers.append(normalize_header(sheet.cell(row=2, column=c).value))
 
-    return None, None
+            if len(row_headers) >= 17 and row_headers[:17] == EXPECTED_17_HEADERS:
+                return 2, col_idx, row_headers[:17]
+            elif len(row_headers) >= 13 and row_headers[:13] == EXPECTED_13_HEADERS:
+                return 2, col_idx, row_headers[:13]
+
+    return None, None, None
 
 
-def extract_sheet_rows(sheet, start_col: int, header_length: int) -> list[list]:
+def extract_sheet_rows(sheet, header_row: int, start_col: int, header_length: int) -> list[list]:
     """
-    Extracts row data starting from Row 2 down to sheet.max_row for header_length columns.
+    Extracts row data starting after the header row down to sheet.max_row for header_length columns.
     Blank rows are ignored.
     """
     extracted_rows = []
     max_row = sheet.max_row
 
-    for r in range(2, max_row + 1):
+    for r in range(header_row + 1, max_row + 1):
         row_vals = [sheet.cell(row=r, column=c).value for c in range(start_col, start_col + header_length)]
         # Check if any cell in this row slice contains non-empty value
         if any(v is not None and str(v).strip() != "" for v in row_vals):
@@ -195,9 +207,9 @@ def process_data(file_paths: list[str], update_progress_callback=None) -> str:
                     )
 
                 sheet = wb[sheet_name]
-                start_col, matched_headers = find_header_position(sheet)
+                header_row, start_col, matched_headers = find_header_position(sheet)
 
-                if start_col is None:
+                if header_row is None:
                     # Phase 8: Record warning for skipped worksheets
                     warnings.append(f"Skipped worksheet '{sheet_name}' in '{file_name}': Header not recognized.")
                     continue
@@ -206,10 +218,10 @@ def process_data(file_paths: list[str], update_progress_callback=None) -> str:
                 if original_header_row is None:
                     header_len = len(matched_headers)
                     original_header_row = [
-                        sheet.cell(row=1, column=c).value for c in range(start_col, start_col + header_len)
+                        sheet.cell(row=header_row, column=c).value for c in range(start_col, start_col + header_len)
                     ]
                     original_header_cells = [
-                        sheet.cell(row=1, column=c) for c in range(start_col, start_col + header_len)
+                        sheet.cell(row=header_row, column=c) for c in range(start_col, start_col + header_len)
                     ]
                     # Pad header row to 17 items if 13-column format using default examples
                     if len(original_header_row) < 17:
@@ -217,7 +229,7 @@ def process_data(file_paths: list[str], update_progress_callback=None) -> str:
                         original_header_cells.extend([None] * (17 - len(original_header_cells)))
 
                 # Extract Data
-                rows = extract_sheet_rows(sheet, start_col, len(matched_headers))
+                rows = extract_sheet_rows(sheet, header_row, start_col, len(matched_headers))
                 merged_data.extend(rows)
 
             wb.close()
