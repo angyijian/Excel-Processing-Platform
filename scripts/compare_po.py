@@ -16,6 +16,7 @@ Usage:
 """
 import os
 import sys
+from datetime import date
 import pandas as pd
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment
@@ -46,23 +47,11 @@ def validate_input_files(file_paths):
     if not file_paths or len(file_paths) != 2:
         raise ValueError("This script requires exactly 2 Excel files: Reorder and Purchase.")
 
-    reorder_path = None
-    purchase_path = None
-
     for path in file_paths:
         if not os.path.exists(path):
             raise FileNotFoundError(f"File not found: {path}")
 
-        filename = os.path.basename(path).lower()
-        if "reorder" in filename:
-            reorder_path = path
-        elif "purchase" in filename:
-            purchase_path = path
-
-    if reorder_path is None or purchase_path is None:
-        raise ValueError("Expected file names to include 'Reorder' and 'Purchase'.")
-
-    return reorder_path, purchase_path
+    return file_paths[0], file_paths[1]
 
 
 def load(reorder_path, purchase_path):
@@ -278,7 +267,8 @@ def process_data(file_paths, update_progress_callback=None):
 
     result = compare(reorder_df, purchase_df)
 
-    out_path = os.path.join(os.getcwd(), "PO_Comparison_Result.xlsx")
+    output_filename = f"PO_Comparison_Result_{date.today().strftime('%y%m%d')}.xlsx"
+    out_path = os.path.join(os.getcwd(), output_filename)
     write_output(result, out_path)
 
     if update_progress_callback:
@@ -294,5 +284,6 @@ if __name__ == "__main__":
     reorder_path, purchase_path = validate_input_files([sys.argv[1], sys.argv[2]])
     r, p = load(reorder_path, purchase_path)
     result = compare(r, p)
-    write_output(result, os.path.abspath(sys.argv[2].replace(os.path.basename(sys.argv[2]), "PO_Comparison_Result.xlsx")))
+    output_filename = f"PO_Comparison_Result_{date.today().strftime('%y%m%d')}.xlsx"
+    write_output(result, os.path.abspath(sys.argv[2].replace(os.path.basename(sys.argv[2]), output_filename)))
     print(result["Status"].value_counts())
