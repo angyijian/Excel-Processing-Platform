@@ -29,6 +29,7 @@ QTY = "总数量\n(TOTAL QTY)"
 SUPPLIER = "SUPPLIER"
 ETD = "ETD\n(送货日期)"
 ETA = "ETA\n(到厂日期)"
+COST = "Order Cost"
 
 STATUS_COLORS = {
     "Cancelled":      "FFC7CE",  # red
@@ -170,6 +171,18 @@ def build_row(status, rrow, prow, note=""):
     def g(row, col):
         return row[col] if row is not None else None
 
+    def total_amount(row):
+        if row is None:
+            return None
+        cost = row[COST]
+        qty = row[QTY]
+        if pd.isna(cost) or pd.isna(qty):
+            return None
+        return cost * qty
+
+    reorder_total = total_amount(rrow)
+    purchase_total = total_amount(prow)
+
     return {
         "Status": status,
         "SKUCODE": g(rrow, SKU) if rrow is not None else g(prow, SKU),
@@ -179,13 +192,20 @@ def build_row(status, rrow, prow, note=""):
         "Reorder Qty": g(rrow, QTY),
         "Purchase Qty": g(prow, QTY),
         "Qty Diff": (g(prow, QTY) - g(rrow, QTY)) if (rrow is not None and prow is not None) else None,
+        "Reorder Cost": g(rrow, COST),
+        "Purchase Cost": g(prow, COST),
+        "Reorder Total Amount": reorder_total,
+        "Purchase Total Amount": purchase_total,
+        "Amount Diff": (purchase_total - reorder_total)
+        if reorder_total is not None and purchase_total is not None else None,
         "Note": note,
     }
 
 
 def write_output(result: pd.DataFrame, out_path: str):
     cols = ["Status", "SKUCODE", "SUPPLIER", "Reorder ETD", "Purchase ETD",
-            "Reorder Qty", "Purchase Qty", "Qty Diff", "Note"]
+            "Reorder Qty", "Purchase Qty", "Qty Diff", "Reorder Cost", "Purchase Cost",
+            "Reorder Total Amount", "Purchase Total Amount", "Amount Diff", "Note"]
     result = result[cols]
 
     wb = openpyxl.Workbook()
@@ -212,8 +232,14 @@ def write_output(result: pd.DataFrame, out_path: str):
             if cols[c_i - 1] in ("Reorder ETD", "Purchase ETD"):
                 if val is not None:
                     cell.number_format = "yyyy-mm-dd"
+            elif cols[c_i - 1] in (
+                "Reorder Cost", "Purchase Cost", "Reorder Total Amount",
+                "Purchase Total Amount", "Amount Diff"
+            ):
+                if val is not None:
+                    cell.number_format = "#,##0.00"
 
-    widths = [16, 12, 12, 14, 14, 12, 12, 10, 40]
+    widths = [16, 12, 12, 14, 14, 12, 12, 10, 14, 14, 20, 20, 14, 40]
     for i, w in enumerate(widths, start=1):
         ws.column_dimensions[get_column_letter(i)].width = w
 
